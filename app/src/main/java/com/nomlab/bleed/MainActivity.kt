@@ -61,6 +61,9 @@ class MainActivity : ComponentActivity() {
         // 保存された設定を読み込み
         loadSettings()
 
+        // サービスの実際の動作状態を確認
+        isServiceRunning = isServiceActuallyRunning()
+
         setContent {
             MaterialTheme {
                 Surface(
@@ -316,6 +319,11 @@ class MainActivity : ComponentActivity() {
             startService(serviceIntent)
         }
         isServiceRunning = true
+
+        // サービス状態をSharedPreferencesに保存
+        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_running", true).apply()
+
         Toast.makeText(this, "iBeacon送信を開始しました", Toast.LENGTH_SHORT).show()
     }
 
@@ -323,6 +331,17 @@ class MainActivity : ComponentActivity() {
         val serviceIntent = Intent(this, BeaconTransmitterService::class.java)
         stopService(serviceIntent)
         isServiceRunning = false
+
+        // サービス状態をSharedPreferencesに保存
+        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_running", false).apply()
+
         Toast.makeText(this, "iBeacon送信を停止しました", Toast.LENGTH_SHORT).show()
+    }
+
+    // サービスが実際に動作しているかを確認する
+    private fun isServiceActuallyRunning(): Boolean {
+        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+        return prefs.getBoolean("is_running", false)
     }
 }
