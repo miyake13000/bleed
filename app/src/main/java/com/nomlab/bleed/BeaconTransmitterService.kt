@@ -5,8 +5,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.le.AdvertiseCallback
-import android.bluetooth.le.AdvertiseSettings
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -16,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import org.altbeacon.beacon.Beacon
 import org.altbeacon.beacon.BeaconParser
 import org.altbeacon.beacon.BeaconTransmitter
+import android.bluetooth.le.AdvertiseSettings;
 import java.util.*
 
 class BeaconTransmitterService : Service() {
@@ -92,13 +91,22 @@ class BeaconTransmitterService : Service() {
                 return
             }
 
+            // SharedPreferencesから設定を読み込み
+            val prefs = getSharedPreferences("beacon_settings", Context.MODE_PRIVATE)
+            val uuidString = prefs.getString("uuid", "12345678-1234-5678-9012-123456789abc")!!
+            val major = prefs.getString("major", "1")!!.toInt()
+            val minor = prefs.getString("minor", "1")!!.toInt()
+            val txPower = prefs.getString("tx_power", "-59")!!.toInt()
+
+            Log.d(TAG, "Starting beacon with UUID: $uuidString, Major: $major, Minor: $minor, TX Power: $txPower")
+
             // iBeaconの設定
             val beacon = Beacon.Builder()
-                .setId1("12345678-1234-5678-9012-123456789abc") // UUID（適宜変更）
-                .setId2("1") // Major
-                .setId3("1") // Minor
+                .setId1(uuidString) // UUID
+                .setId2(major.toString()) // Major
+                .setId3(minor.toString()) // Minor
                 .setManufacturer(0x004c) // Apple Inc.
-                .setTxPower(-59)
+                .setTxPower(txPower)
                 .setDataFields(listOf(0L))
                 .build()
 
@@ -106,39 +114,22 @@ class BeaconTransmitterService : Service() {
             val beaconParser = BeaconParser()
                 .setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24")
 
-            // Check if advertising is supported
-            if (BeaconTransmitter.checkTransmissionSupported(applicationContext) != 0) {
-                Log.e(TAG, "Bluetooth LE Advertising not supported on this device")
-                return
-            }
+            // BeaconTransmitterの初期化
             beaconTransmitter = BeaconTransmitter(applicationContext, beaconParser)
 
-            // Advertising settings (optional, but good to be explicit)
-            // These settings map to Android's AdvertiseSettings
-            beaconTransmitter?.setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY) // More frequent
-            beaconTransmitter?.setAdvertiseTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH) // Higher power
+            // 送信間隔の設定（デフォルト: 100ms間隔）
+            beaconTransmitter?.advertiseMode = AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
+            beaconTransmitter?.advertiseTxPowerLevel = AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM
 
-            // Implement AdvertiseCallback
-            val advertiseCallback = object : AdvertiseCallback() {
-                override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                    super.onStartSuccess(settingsInEffect)
-                    Log.i(TAG, "iBeacon transmission started successfully")
-                }
-
-                override fun onStartFailure(errorCode: Int) {
-                    super.onStartFailure(errorCode)
-                    Log.e(TAG, "Failed to start iBeacon transmission, error code: $errorCode")
-                    // You can check specific error codes like ADVERTISE_FAILED_ALREADY_STARTED,
-                    // ADVERTISE_FAILED_DATA_TOO_LARGE, etc.
-                }
+            // 送信開始
+            try {
+                beaconTransmitter?.startAdvertising(beacon)
+                Log.i(TAG, "iBeacon transmission started successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start iBeacon transmission")
             }
 
-            beaconTransmitter?.startAdvertising(beacon, advertiseCallback)
-
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Bluetooth permission not granted. Please ensure BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT permissions are granted.", e)
-        }
-        catch (e: Exception) {
+        } catch (e: Exception) {
             Log.e(TAG, "Error starting beacon transmission", e)
         }
     }

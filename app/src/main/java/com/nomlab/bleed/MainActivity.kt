@@ -2,39 +2,44 @@ package com.nomlab.bleed
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
-
     private var isServiceRunning by mutableStateOf(false)
+
+    // iBeacon設定の状態
+    private var uuid by mutableStateOf("12345678-1234-5678-9012-123456789abc")
+    private var major by mutableStateOf("1")
+    private var minor by mutableStateOf("1")
+    private var txPower by mutableStateOf("-59")
 
     // 権限リクエスト用のランチャー
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        Log.d("MainActivity", "Permission result: $permissions")
         val allGranted = permissions.values.all { it }
         if (allGranted) {
-            // すべての権限が許可された場合
             checkBluetoothAndStartService()
         } else {
-            // 権限が拒否された場合
             Toast.makeText(this, "iBeacon送信には位置情報とBluetooth権限が必要です", Toast.LENGTH_LONG).show()
         }
     }
@@ -53,6 +58,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // 保存された設定を読み込み
+        loadSettings()
+
         setContent {
             MaterialTheme {
                 Surface(
@@ -65,44 +73,198 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun MainScreen() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = "iBeacon送信アプリ",
                 style = MaterialTheme.typography.headlineMedium
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                text = if (isServiceRunning) "送信中..." else "停止中",
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isServiceRunning)
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // 送信状態表示
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isServiceRunning)
+                        MaterialTheme.colorScheme.primaryContainer
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = if (isServiceRunning) "送信中..." else "停止中",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isServiceRunning)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // 設定セクション
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "iBeacon設定",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    // UUID入力
+                    OutlinedTextField(
+                        value = uuid,
+                        onValueChange = { uuid = it },
+                        label = { Text("UUID") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isServiceRunning,
+                        placeholder = { Text("12345678-1234-5678-9012-123456789abc") }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Major/Minorを横並びに
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = major,
+                            onValueChange = { major = it },
+                            label = { Text("Major") },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isServiceRunning,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            placeholder = { Text("1") }
+                        )
+
+                        OutlinedTextField(
+                            value = minor,
+                            onValueChange = { minor = it },
+                            label = { Text("Minor") },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isServiceRunning,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            placeholder = { Text("1") }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // TX Power入力
+                    OutlinedTextField(
+                        value = txPower,
+                        onValueChange = { txPower = it },
+                        label = { Text("TX Power (dBm)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isServiceRunning,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        placeholder = { Text("-59") }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 送信開始/停止ボタン
             Button(
                 onClick = {
                     if (isServiceRunning) {
                         stopBeaconService()
                     } else {
-                        checkPermissionsAndStart()
+                        if (validateSettings()) {
+                            saveSettings()
+                            checkPermissionsAndStart()
+                        }
                     }
-                }
+                },
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (isServiceRunning) "送信停止" else "送信開始")
             }
+
+            if (!isServiceRunning) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "※ 送信中は設定変更できません",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    private fun validateSettings(): Boolean {
+        // UUID形式の簡易チェック
+        val uuidPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+        if (!uuid.matches(uuidPattern)) {
+            Toast.makeText(this, "UUIDの形式が正しくありません", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
+        // Major/Minorの数値チェック（0-65535）
+        try {
+            val majorInt = major.toInt()
+            val minorInt = minor.toInt()
+            if (majorInt < 0 || majorInt > 65535 || minorInt < 0 || minorInt > 65535) {
+                Toast.makeText(this, "Major/Minorは0-65535の範囲で入力してください", Toast.LENGTH_SHORT).show()
+                return false
+            }
+        } catch (e: NumberFormatException) {
+            Toast.makeText(this, "Major/Minorは数値で入力してください", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
+        // TX Powerの数値チェック（-100 to 20程度）
+        try {
+            val txPowerInt = txPower.toInt()
+            if (txPowerInt < -100 || txPowerInt > 20) {
+                Toast.makeText(this, "TX Powerは-100から20の範囲で入力してください", Toast.LENGTH_SHORT).show()
+                return false
+            }
+        } catch (e: NumberFormatException) {
+            Toast.makeText(this, "TX Powerは数値で入力してください", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
+        return true
+    }
+
+    private fun loadSettings() {
+        val prefs = getSharedPreferences("beacon_settings", Context.MODE_PRIVATE)
+        uuid = prefs.getString("uuid", "12345678-1234-5678-9012-123456789abc") ?: "12345678-1234-5678-9012-123456789abc"
+        major = prefs.getString("major", "1") ?: "1"
+        minor = prefs.getString("minor", "1") ?: "1"
+        txPower = prefs.getString("tx_power", "-59") ?: "-59"
+    }
+
+    private fun saveSettings() {
+        val prefs = getSharedPreferences("beacon_settings", Context.MODE_PRIVATE)
+        with(prefs.edit()) {
+            putString("uuid", uuid)
+            putString("major", major)
+            putString("minor", minor)
+            putString("tx_power", txPower)
+            apply()
         }
     }
 
@@ -139,7 +301,6 @@ class MainActivity : ComponentActivity() {
         }
 
         if (!bluetoothAdapter.isEnabled) {
-            // Bluetoothが無効な場合は有効化をリクエスト
             val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
             enableBluetoothLauncher.launch(enableBtIntent)
         } else {
