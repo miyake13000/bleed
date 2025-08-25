@@ -11,7 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
-import android.bluetooth.le.AdvertiseSettings;
+import android.bluetooth.le.AdvertiseSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -77,6 +77,8 @@ class MainActivity : ComponentActivity() {
         val allGranted = permissions.values.all { it }
         if (!allGranted) {
             Toast.makeText(this, "iBeacon送信には位置情報とBluetooth権限が必要です", Toast.LENGTH_LONG).show()
+        } else {
+            startBeaconService()
         }
     }
 
@@ -255,11 +257,11 @@ class MainActivity : ComponentActivity() {
                         stopBeaconService()
                     } else {
                         if (isSettingsValid() && isBluetoothEnabled()) {
-                            if (missingPermissions().isEmpty()) {
-                                saveSettings()
-                                startBeaconService()
-                            } else {
+                            saveSettings()
+                            if (missingPermissions().isNotEmpty()) {
                                 requestPermissionLauncher.launch(missingPermissions())
+                            } else {
+                                startBeaconService()
                             }
                         }
                     }
@@ -371,11 +373,7 @@ class MainActivity : ComponentActivity() {
 
     private fun startBeaconService() {
         val serviceIntent = Intent(this, BeaconTransmitterService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        startForegroundService(serviceIntent)
         isServiceRunning = true
     }
 
