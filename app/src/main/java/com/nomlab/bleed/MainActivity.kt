@@ -1,13 +1,17 @@
 package com.nomlab.bleed
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import android.bluetooth.le.AdvertiseSettings;
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,39 +34,66 @@ class MainActivity : ComponentActivity() {
     private var uuid by mutableStateOf("12345678-1234-5678-9012-123456789abc")
     private var major by mutableStateOf("1")
     private var minor by mutableStateOf("1")
-    private var txPower by mutableStateOf("-59")
+    private var txPowerLevel by mutableStateOf(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM) // デフォルト: MEDIUM
+
+    // TX Power設定のデータクラス
+    data class TxPowerOption(
+        val level: Int,
+        val displayName: String,
+        val dbmValue: Int
+    )
+
+    // TX Powerの選択肢
+    private val txPowerOptions = listOf(
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_ULTRA_LOW, "Ultra Low (-21dBm)", -21),
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_LOW, "Low (-12dBm)", -12),
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM, "Medium (-7dBm)", -7),
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH, "High (1dBm)", 1)
+    )
+
+    // サービス停止を受信するBroadcastReceiver
+    private val serviceStoppedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == BeaconTransmitterService.BROADCAST_SERVICE_STOPPED) {
+                isServiceRunning = false
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // BroadcastReceiverの登録を解除
+        try {
+            unregisterReceiver(serviceStoppedReceiver)
+        } catch (e: IllegalArgumentException) {
+            // レシーバーが既に登録解除されている場合
+        }
+    }
 
     // 権限リクエスト用のランチャー
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
-        if (allGranted) {
-            checkBluetoothAndStartService()
-        } else {
+        if (!allGranted) {
             Toast.makeText(this, "iBeacon送信には位置情報とBluetooth権限が必要です", Toast.LENGTH_LONG).show()
         }
     }
 
-    // Bluetooth有効化リクエスト用のランチャー
-    private val enableBluetoothLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            startBeaconService()
-        } else {
-            Toast.makeText(this, "Bluetoothを有効にしてください", Toast.LENGTH_SHORT).show()
-        }
-    }
-
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 保存された設定を読み込み
         loadSettings()
-
-        // サービスの実際の動作状態を確認
         isServiceRunning = isServiceActuallyRunning()
+
+        // BroadcastReceiverを登録
+        val filter = IntentFilter(BeaconTransmitterService.BROADCAST_SERVICE_STOPPED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(serviceStoppedReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(serviceStoppedReceiver, filter)
+        }
 
         setContent {
             MaterialTheme {
@@ -81,13 +112,12 @@ class MainActivity : ComponentActivity() {
     fun MainScreen() {
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "iBeacon送信アプリ",
+                text = "Bleed",
                 style = MaterialTheme.typography.headlineMedium
             )
 
@@ -139,6 +169,7 @@ class MainActivity : ComponentActivity() {
                         onValueChange = { uuid = it },
                         label = { Text("UUID") },
                         modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyMedium,
                         enabled = !isServiceRunning,
                         placeholder = { Text("12345678-1234-5678-9012-123456789abc") }
                     )
@@ -173,16 +204,45 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // TX Power入力
-                    OutlinedTextField(
-                        value = txPower,
-                        onValueChange = { txPower = it },
-                        label = { Text("TX Power (dBm)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isServiceRunning,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        placeholder = { Text("-59") }
-                    )
+                    // TX Power選択（プルダウン）
+                    var expanded by remember { mutableStateOf(false) }
+                    val selectedOption = txPowerOptions.find { it.level == txPowerLevel }
+                        ?: txPowerOptions[2] // デフォルトでMedium
+
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = !expanded && !isServiceRunning }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedOption.displayName,
+                            onValueChange = { },
+                            readOnly = true,
+                            label = { Text("TX Power") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            enabled = !isServiceRunning,
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            txPowerOptions.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.displayName) },
+                                    onClick = {
+                                        txPowerLevel = option.level
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -194,14 +254,18 @@ class MainActivity : ComponentActivity() {
                     if (isServiceRunning) {
                         stopBeaconService()
                     } else {
-                        if (validateSettings()) {
-                            saveSettings()
-                            checkPermissionsAndStart()
+                        if (isSettingsValid() && isBluetoothEnabled()) {
+                            if (missingPermissions().isEmpty()) {
+                                saveSettings()
+                                startBeaconService()
+                            } else {
+                                requestPermissionLauncher.launch(missingPermissions())
+                            }
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) {
+ ) {
                 Text(if (isServiceRunning) "送信停止" else "送信開始")
             }
 
@@ -216,7 +280,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun validateSettings(): Boolean {
+    private fun isSettingsValid(): Boolean {
         // UUID形式の簡易チェック
         val uuidPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
         if (!uuid.matches(uuidPattern)) {
@@ -237,18 +301,6 @@ class MainActivity : ComponentActivity() {
             return false
         }
 
-        // TX Powerの数値チェック（-100 to 20程度）
-        try {
-            val txPowerInt = txPower.toInt()
-            if (txPowerInt < -100 || txPowerInt > 20) {
-                Toast.makeText(this, "TX Powerは-100から20の範囲で入力してください", Toast.LENGTH_SHORT).show()
-                return false
-            }
-        } catch (e: NumberFormatException) {
-            Toast.makeText(this, "TX Powerは数値で入力してください", Toast.LENGTH_SHORT).show()
-            return false
-        }
-
         return true
     }
 
@@ -257,7 +309,7 @@ class MainActivity : ComponentActivity() {
         uuid = prefs.getString("uuid", "12345678-1234-5678-9012-123456789abc") ?: "12345678-1234-5678-9012-123456789abc"
         major = prefs.getString("major", "1") ?: "1"
         minor = prefs.getString("minor", "1") ?: "1"
-        txPower = prefs.getString("tx_power", "-59") ?: "-59"
+        txPowerLevel = prefs.getInt("tx_power_level", AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
     }
 
     private fun saveSettings() {
@@ -266,49 +318,55 @@ class MainActivity : ComponentActivity() {
             putString("uuid", uuid)
             putString("major", major)
             putString("minor", minor)
-            putString("tx_power", txPower)
+            putInt("tx_power_level", txPowerLevel)
             apply()
         }
     }
 
-    private fun checkPermissionsAndStart() {
-        val requiredPermissions = mutableListOf<String>().apply {
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            } else {
-                add(Manifest.permission.BLUETOOTH)
-                add(Manifest.permission.BLUETOOTH_ADMIN)
-            }
-        }
-
-        val missingPermissions = requiredPermissions.filter { permission ->
-            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
-        }
-
-        if (missingPermissions.isEmpty()) {
-            checkBluetoothAndStartService()
-        } else {
-            requestPermissionLauncher.launch(missingPermissions.toTypedArray())
-        }
-    }
-
-    private fun checkBluetoothAndStartService() {
+    private fun isBluetoothEnabled(): Boolean {
         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
 
         if (bluetoothAdapter == null) {
             Toast.makeText(this, "このデバイスはBluetoothをサポートしていません", Toast.LENGTH_SHORT).show()
-            return
+            return false
         }
 
         if (!bluetoothAdapter.isEnabled) {
-            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-            enableBluetoothLauncher.launch(enableBtIntent)
-        } else {
-            startBeaconService()
+            Toast.makeText(this, "Bluetoothが無効になっています", Toast.LENGTH_SHORT).show()
+            return false
         }
+
+        return true
+    }
+
+    private fun requiredPermissions(): Array<String> {
+        val permissions = mutableListOf<String>()
+
+        permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+
+        // Android 13以降では通知権限が必要
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(Manifest.permission.BLUETOOTH_ADVERTISE)
+        } else {
+            permissions.add(Manifest.permission.BLUETOOTH)
+            permissions.add(Manifest.permission.BLUETOOTH_ADMIN)
+        }
+
+        return permissions.toTypedArray()
+    }
+
+    private fun missingPermissions(): Array<String> {
+        return requiredPermissions().filter { permission ->
+            ContextCompat.checkSelfPermission(
+                this,
+                permission
+            ) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
     }
 
     private fun startBeaconService() {
@@ -319,24 +377,12 @@ class MainActivity : ComponentActivity() {
             startService(serviceIntent)
         }
         isServiceRunning = true
-
-        // サービス状態をSharedPreferencesに保存
-        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("is_running", true).apply()
-
-        Toast.makeText(this, "iBeacon送信を開始しました", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopBeaconService() {
         val serviceIntent = Intent(this, BeaconTransmitterService::class.java)
         stopService(serviceIntent)
         isServiceRunning = false
-
-        // サービス状態をSharedPreferencesに保存
-        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("is_running", false).apply()
-
-        Toast.makeText(this, "iBeacon送信を停止しました", Toast.LENGTH_SHORT).show()
     }
 
     // サービスが実際に動作しているかを確認する

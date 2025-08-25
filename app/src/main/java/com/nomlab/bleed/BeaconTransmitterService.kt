@@ -1,5 +1,6 @@
 package com.nomlab.bleed
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -14,14 +15,16 @@ import androidx.core.app.NotificationCompat
 import org.altbeacon.beacon.Beacon
 import org.altbeacon.beacon.BeaconParser
 import org.altbeacon.beacon.BeaconTransmitter
-import android.bluetooth.le.AdvertiseSettings;
-import java.util.*
+import android.bluetooth.le.AdvertiseSettings
+import android.widget.Toast
 
 class BeaconTransmitterService : Service() {
     companion object {
         private const val TAG = "BeaconTransmitterService"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "beacon_service_channel"
+        const val ACTION_STOP_SERVICE = "com.nomlab.bleed.STOP_SERVICE"
+        const val BROADCAST_SERVICE_STOPPED = "com.nomlab.bleed.SERVICE_STOPPED"
     }
 
     private var beaconTransmitter: BeaconTransmitter? = null
@@ -30,10 +33,21 @@ class BeaconTransmitterService : Service() {
         super.onCreate()
         createNotificationChannel()
         Log.d(TAG, "Service created")
+
+        // サービス開始状態を保存
+        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_running", true).apply()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service started")
+
+        // 停止アクションが送信された場合
+        if (intent?.action == ACTION_STOP_SERVICE) {
+            Log.d(TAG, "Stop action received")
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         // フォアグラウンド通知を開始
         val notification = createNotification()
@@ -49,6 +63,14 @@ class BeaconTransmitterService : Service() {
         super.onDestroy()
         Log.d(TAG, "Service destroyed")
         stopBeaconTransmission()
+
+        // サービス停止状態を保存
+        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_running", false).apply()
+
+        // MainActivityに停止を通知
+        val intent = Intent(BROADCAST_SERVICE_STOPPED)
+        sendBroadcast(intent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -61,28 +83,59 @@ class BeaconTransmitterService : Service() {
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "iBeaconパケットを送信しています"
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
 
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+
+            Log.d(TAG, "Notification channel created")
         }
     }
 
-    private fun createNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("iBeacon送信中")
-        .setContentText("バックグラウンドでiBeaconを送信しています")
-        .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setContentIntent(
-            PendingIntent.getActivity(
-                this,
-                0,
-                Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE
-            )
+    private fun createNotification(): Notification {
+        val openAppIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        .build()
+
+        // サービス停止用のPendingIntent
+        val stopServiceIntent = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, BeaconTransmitterService::class.java).apply {
+                action = ACTION_STOP_SERVICE
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("iBeacon送信中")
+            .setContentText("バックグラウンドでiBeaconを送信しています")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentIntent(openAppIntent)
+            .setOngoing(true) // 通知を消去できないようにする
+            .setAutoCancel(false)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // 停止ボタンを追加
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "停止",
+                stopServiceIntent
+            )
+            .build()
+    }
 
     private fun startBeaconTransmission() {
+        Toast.makeText(this, "iBeacon送信を開始しました", Toast.LENGTH_SHORT).show()
+
         try {
             // Bluetoothアダプターの確認
             val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
@@ -96,9 +149,18 @@ class BeaconTransmitterService : Service() {
             val uuidString = prefs.getString("uuid", "12345678-1234-5678-9012-123456789abc")!!
             val major = prefs.getString("major", "1")!!.toInt()
             val minor = prefs.getString("minor", "1")!!.toInt()
-            val txPower = prefs.getString("tx_power", "-59")!!.toInt()
+            val txPowerLevel = prefs.getInt("tx_power_level", AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
 
-            Log.d(TAG, "Starting beacon with UUID: $uuidString, Major: $major, Minor: $minor, TX Power: $txPower")
+            // TX Power設定のマッピング
+            val txPowerMapping = mapOf(
+                0 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_ULTRA_LOW, -21),
+                1 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_LOW, -12),
+                2 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM, -7),
+                3 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH, 1)
+            )
+            val (advertiseTxPowerLevel, beaconTxPower) = txPowerMapping[txPowerLevel]!!
+
+            Log.d(TAG, "Starting beacon with UUID: $uuidString, Major: $major, Minor: $minor, TX Power Level: $txPowerLevel ($beaconTxPower dBm)")
 
             // iBeaconの設定
             val beacon = Beacon.Builder()
@@ -106,7 +168,7 @@ class BeaconTransmitterService : Service() {
                 .setId2(major.toString()) // Major
                 .setId3(minor.toString()) // Minor
                 .setManufacturer(0x004c) // Apple Inc.
-                .setTxPower(txPower)
+                .setTxPower(beaconTxPower)
                 .setDataFields(listOf(0L))
                 .build()
 
@@ -119,7 +181,7 @@ class BeaconTransmitterService : Service() {
 
             // 送信間隔の設定（デフォルト: 100ms間隔）
             beaconTransmitter?.advertiseMode = AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
-            beaconTransmitter?.advertiseTxPowerLevel = AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM
+            beaconTransmitter?.advertiseTxPowerLevel = advertiseTxPowerLevel
 
             // 送信開始
             try {
@@ -136,6 +198,7 @@ class BeaconTransmitterService : Service() {
 
     private fun stopBeaconTransmission() {
         beaconTransmitter?.stopAdvertising()
+        Toast.makeText(this, "iBeacon送信を停止しました", Toast.LENGTH_SHORT).show()
         Log.i(TAG, "iBeacon transmission stopped")
     }
 }
