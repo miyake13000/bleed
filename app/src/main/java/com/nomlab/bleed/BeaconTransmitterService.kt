@@ -180,7 +180,7 @@ class BeaconTransmitterService : Service() {
             beaconTransmitter = BeaconTransmitter(applicationContext, beaconParser)
 
             // 送信間隔の設定（デフォルト: 100ms間隔）
-            beaconTransmitter?.advertiseMode = AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
+            beaconTransmitter?.advertiseMode = AdvertiseSettings.ADVERTISE_MODE_LOW_POWER
             beaconTransmitter?.advertiseTxPowerLevel = advertiseTxPowerLevel
 
             // 送信開始
