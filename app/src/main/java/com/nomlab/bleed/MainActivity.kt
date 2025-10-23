@@ -58,7 +58,6 @@ class MainActivity : ComponentActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == BeaconTransmitterService.BROADCAST_SERVICE_STOPPED) {
                 isServiceRunning = false
-                Toast.makeText(this@MainActivity, "サービスが停止されました", Toast.LENGTH_SHORT).show()
             }
         }
     }
