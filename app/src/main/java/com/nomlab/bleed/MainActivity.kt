@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private var major by mutableStateOf("1")
     private var minor by mutableStateOf("1")
     private var txPowerLevel by mutableStateOf(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM) // デフォルト: MEDIUM
+    private var autoStartEnabled by mutableStateOf(false)
 
     // TX Power設定のデータクラス
     data class TxPowerOption(
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == BeaconTransmitterService.BROADCAST_SERVICE_STOPPED) {
                 isServiceRunning = false
+                Toast.makeText(this@MainActivity, "サービスが停止されました", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -246,6 +248,34 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 自動起動設定
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "自動起動",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "デバイス起動時にサービスを自動的に開始します",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoStartEnabled,
+                            onCheckedChange = {
+                                autoStartEnabled = it
+                                saveAutoStartSetting(it)
+                            }
+                        )
+                    }
                 }
             }
 
@@ -313,6 +343,9 @@ class MainActivity : ComponentActivity() {
         major = prefs.getString("major", "1") ?: "1"
         minor = prefs.getString("minor", "1") ?: "1"
         txPowerLevel = prefs.getInt("tx_power_level", AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+
+        val statePrefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+        autoStartEnabled = statePrefs.getBoolean("auto_start_enabled", false)
     }
 
     private fun saveSettings() {
@@ -324,6 +357,11 @@ class MainActivity : ComponentActivity() {
             putInt("tx_power_level", txPowerLevel)
             apply()
         }
+    }
+
+    private fun saveAutoStartSetting(enabled: Boolean) {
+        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("auto_start_enabled", enabled).apply()
     }
 
     private fun isBluetoothEnabled(): Boolean {
