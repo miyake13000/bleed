@@ -47,10 +47,10 @@ class MainActivity : ComponentActivity() {
 
     // TX Powerの選択肢
     private val txPowerOptions = listOf(
-        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_ULTRA_LOW, "Ultra Low (-21dBm)", -21),
-        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_LOW, "Low (-12dBm)", -12),
-        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM, "Medium (-7dBm)", -7),
-        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH, "High (1dBm)", 1)
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_ULTRA_LOW, "Ultra Low (-70dBm)", -70),
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_LOW, "Low (-65dBm)", -65),
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM, "Medium (-60dBm)", -60),
+        TxPowerOption(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH, "High (-50dBm)", -50)
     )
 
     // サービス停止を受信するBroadcastReceiver

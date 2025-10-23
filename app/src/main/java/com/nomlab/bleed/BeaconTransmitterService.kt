@@ -153,10 +153,10 @@ class BeaconTransmitterService : Service() {
 
             // TX Power設定のマッピング
             val txPowerMapping = mapOf(
-                0 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_ULTRA_LOW, -21),
-                1 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_LOW, -12),
-                2 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM, -7),
-                3 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH, 1)
+                0 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_ULTRA_LOW, -70),
+                1 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_LOW, -65),
+                2 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM, -60),
+                3 to Pair(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH, -50)
             )
             val (advertiseTxPowerLevel, beaconTxPower) = txPowerMapping[txPowerLevel]!!
 
