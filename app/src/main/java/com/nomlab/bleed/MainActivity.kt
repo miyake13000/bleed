@@ -1,6 +1,7 @@
 package com.nomlab.bleed
 
 import android.Manifest
+import android.app.ActivityManager
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
@@ -383,9 +384,25 @@ class MainActivity : ComponentActivity() {
         isServiceRunning = false
     }
 
-    // サービスが実際に動作しているかを確認する
+    /**
+     * サービスが実際に動作しているかを確認する
+     */
+    @Suppress("DEPRECATION")
     private fun isServiceActuallyRunning(): Boolean {
-        val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
-        return prefs.getBoolean("is_running", false)
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+
+        return try {
+            // 実行中のサービス一覧を取得
+            val runningServices = activityManager.getRunningServices(Integer.MAX_VALUE)
+
+            // BeaconTransmitterServiceが実行中かチェック
+            runningServices.any { serviceInfo ->
+                serviceInfo.service.className == BeaconTransmitterService::class.java.name
+            }
+        } catch (e: Exception) {
+            // API 30以降では制限があるため、SharedPreferencesで状態を管理する代替案
+            val prefs = getSharedPreferences("beacon_service_state", Context.MODE_PRIVATE)
+            prefs.getBoolean("is_running", false)
+        }
     }
 }
