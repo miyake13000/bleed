@@ -32,9 +32,11 @@ class MainActivity : ComponentActivity() {
     private var isServiceRunning by mutableStateOf(false)
 
     // iBeacon設定の状態
-    private var uuid by mutableStateOf("12345678-1234-5678-9012-123456789abc")
-    private var major by mutableStateOf("1")
-    private var minor by mutableStateOf("1")
+    private var comID by mutableStateOf("")
+    private var typeID by mutableStateOf("")
+    private var uuid by mutableStateOf("")
+    private var major by mutableStateOf("")
+    private var minor by mutableStateOf("")
     private var txPowerLevel by mutableStateOf(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM) // デフォルト: MEDIUM
     private var autoStartEnabled by mutableStateOf(false)
 
@@ -175,7 +177,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxWidth(),
                         textStyle = MaterialTheme.typography.bodyMedium,
                         enabled = !isServiceRunning,
-                        placeholder = { Text("12345678-1234-5678-9012-123456789abc") }
+                        placeholder = { Text(text = "01234567-89ab-cdef-0123-456789abcdef", style = MaterialTheme.typography.bodyMedium) }
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
