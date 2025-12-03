@@ -167,14 +167,14 @@ class BeaconTransmitterService : Service() {
                 .setId1(uuidString) // UUID
                 .setId2(major.toString()) // Major
                 .setId3(minor.toString()) // Minor
-                .setManufacturer(0x004c) // Apple Inc.
+                .setManufacturer(0xdead) // Custom manufacturer ID
                 .setTxPower(beaconTxPower)
                 .setDataFields(listOf(0L))
                 .build()
 
             // BeaconParserの設定（iBeacon形式）
             val beaconParser = BeaconParser()
-                .setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24")
+                .setBeaconLayout("m:2-3=efbe,i:4-19,i:20-21,i:22-23,p:24-24")
 
             // BeaconTransmitterの初期化
             beaconTransmitter = BeaconTransmitter(applicationContext, beaconParser)
